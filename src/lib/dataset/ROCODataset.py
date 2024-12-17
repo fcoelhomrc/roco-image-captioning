@@ -4,6 +4,7 @@ from torchvision.io import ImageReadMode, read_image
 from torchvision.transforms import transforms
 from typing import Callable, Optional
 import unicodedata
+from PIL import Image
 
 
 class ImageTextDataset(VisionDataset):
@@ -72,12 +73,9 @@ class ImageTextDataset(VisionDataset):
 
     def _load_image(self, idx: int):
         path = self.image_paths[idx]
-        #try:
         image = read_image(path, mode=ImageReadMode.RGB)
+        # image = Image.open(path)
         return image
-        #except:
-        #    print(f"No image at {path} exists!")
-        #    pass
 
     def _load_target(self, idx):
         return self.captions[idx]
@@ -104,7 +102,7 @@ class ImageTextDataset(VisionDataset):
                 ),
                 transforms.RandomHorizontalFlip(),
                 transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ])
         else:
             pipeline = transforms.Compose([
@@ -112,7 +110,7 @@ class ImageTextDataset(VisionDataset):
                 transforms.Resize(int(self.input_size[0] / 0.875)),
                 transforms.CenterCrop(self.input_size[0]),
                 transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+                # transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
             ])
 
         self.transform = pipeline
