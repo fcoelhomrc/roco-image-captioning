@@ -73,7 +73,12 @@ class ImageTextDataset(VisionDataset):
 
     def _load_image(self, idx: int):
         path = self.image_paths[idx]
-        image = read_image(path, mode=ImageReadMode.RGB)
+        try:
+            image = read_image(path, mode=ImageReadMode.RGB)
+        except RuntimeError:
+            print(self.image_paths[idx])
+            import torch
+            image = torch.zeros((3, 200, 200))
         # image = Image.open(path)
         return image
 
@@ -118,14 +123,22 @@ class ImageTextDataset(VisionDataset):
 
 
 if __name__ == "__main__":
+    from src.lib.data_transform.collate import collate_clip
+
     cfg_pth = "/home/felipe/Projects/roco-image-captioning/config.yaml"
     import yaml
+    from tqdm import tqdm
     with open(cfg_pth, "r") as f:
         cfg = yaml.safe_load(f)
     ds = ImageTextDataset("train", cfg)
     from torch.utils.data import DataLoader
-    dl = DataLoader(ds, batch_size=4, shuffle=True)
-    for x, y in dl:
-        print(x.shape, x.dtype)
-        print(y)
-        break
+    dl = DataLoader(ds, batch_size=4, shuffle=True,
+                    collate_fn=collate_clip,)
+
+    for x, y in tqdm(dl):
+        pass
+
+    # for x, y in dl:
+    #     print(x)
+    #     print(y)
+    #     break
