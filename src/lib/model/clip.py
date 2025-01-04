@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torchvision
 import torch.nn.functional as F
-from transformers import CLIPModel
+from transformers import CLIPProcessor, CLIPModel
 
 import torchmetrics
 import einops
@@ -21,12 +21,20 @@ class MedCLIP(L.LightningModule):
         self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32",
                                                attn_implementation="sdpa")
         self.loss_fn = self.scaled_pairwise_cosine_sim_loss
+        self.register_buffer("labels", torch.arange(self.user_parameters["train"]["batch_size"]))
         self.save_hyperparameters()  # wandb
 
-    def forward(self, pairs):
-        text_features = self.model.get_text_features(input_ids=pairs["input_ids"],
-                                                     attention_mask=pairs["attention_mask"], )
-        image_features = self.model.get_image_features(pixel_values=pairs["pixel_values"], )
+    def forward(self, inputs):
+        # compute similarities (contrastive pairs)
+        outputs = self.model(**inputs)
+        logits_per_text = outputs.logits_per_text
+        logits_per_image = outputs.logits_per_image
+        return logits_per_text, logits_per_image
+
+    def extract_features(self, inputs):
+        text_features = self.model.get_text_features(input_ids=inputs["input_ids"],
+                                                     attention_mask=inputs["attention_mask"], )
+        image_features = self.model.get_image_features(pixel_values=inputs["pixel_values"], )
         return text_features, image_features
 
     def configure_optimizers(self):
@@ -38,30 +46,65 @@ class MedCLIP(L.LightningModule):
             lr=self.user_parameters['optimizer']['lr'],
             weight_decay=self.user_parameters['optimizer']['weight_decay'],
         )
-        return optimizer
+
+        lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, factor=self.user_parameters["optimizer"]["lr_scheduler_rate"], patience=10,
+        )
+
+        return {"optimizer": optimizer, "lr_scheduler": lr_scheduler, "monitor": "train/loss"}
 
     def training_step(self, train_batch, batch_idx):
-        pairs, labels = train_batch
-        text_features, image_features = self.forward(pairs)
-
-        text_loss, image_loss = MedCLIP._compute_text_and_image_loss_terms(text_features, image_features, labels)
+        # compute similarities (contrastive pairs)
+        outputs = self.model(**train_batch)
+        logits_per_text = outputs.logits_per_text
+        logits_per_image = outputs.logits_per_image
+        # compute loss
+        text_loss, image_loss = MedCLIP.compute_text_and_image_loss_terms(
+            logits_per_text, logits_per_image, self.labels
+        )
         loss = self.loss_fn(text_loss, image_loss, weight=0.5)
 
+        # metrics
+        probas = logits_per_image.softmax(dim=1)
+        preds = probas.argmax(dim=1)
+        accuracy = torchmetrics.functional.accuracy(
+            preds, self.labels, task="multiclass", num_classes=len(self.labels)
+        )
+        mcc = torchmetrics.functional.matthews_corrcoef(
+            preds, self.labels, task="multiclass", num_classes=len(self.labels)
+        )
         self.log("train/loss", loss)  # wandb
         self.log("train/text_loss", text_loss)  # wandb
         self.log("train/image_loss", image_loss)  # wandb
+        self.log("train/accuracy", accuracy)  # wandb
+        self.log("train/mcc", mcc.to(torch.float32))  # wandb
         return loss
 
     def validation_step(self, val_batch, batch_idx):
-        pairs, labels = val_batch
-        text_features, image_features = self.forward(pairs)
-
-        text_loss, image_loss = MedCLIP._compute_text_and_image_loss_terms(text_features, image_features, labels)
+        # compute similarities (contrastive pairs)
+        outputs = self.model(**val_batch)
+        logits_per_text = outputs.logits_per_text
+        logits_per_image = outputs.logits_per_image
+        # compute loss
+        text_loss, image_loss = MedCLIP.compute_text_and_image_loss_terms(
+            logits_per_text, logits_per_image, self.labels
+        )
         loss = self.loss_fn(text_loss, image_loss, weight=0.5)
 
+        # metrics
+        probas = logits_per_image.softmax(dim=1)
+        preds = probas.argmax(dim=1)
+        accuracy = torchmetrics.functional.accuracy(
+            preds, self.labels, task="multiclass", num_classes=len(self.labels)
+        )
+        mcc = torchmetrics.functional.matthews_corrcoef(
+            preds, self.labels, task="multiclass", num_classes=len(self.labels)
+        )
         self.log("val/loss", loss)  # wandb
         self.log("val/text_loss", text_loss)  # wandb
         self.log("val/image_loss", image_loss)  # wandb
+        self.log("val/accuracy", accuracy)  # wandb
+        self.log("val/mcc", mcc.to(torch.float32))  # wandb
         return loss
 
     @staticmethod
@@ -69,22 +112,11 @@ class MedCLIP(L.LightningModule):
         return weight * text_loss + (1 - weight) * image_loss
 
     @staticmethod
-    def _compute_text_and_image_loss_terms(text_features, image_features, labels):
-        text_logits = torch.bmm(einops.rearrange(text_features, "b d -> b 1 d"),
-                                einops.rearrange(image_features, "b d -> b d 1"))
-        image_logits = torch.bmm(einops.rearrange(image_features, "b d -> b 1 d"),
-                                 einops.rearrange(image_features, "b d -> b d 1"))
-        text_logits = einops.rearrange(text_logits, "b 1 1 -> b")
-        image_logits = einops.rearrange(image_logits, "b 1 1 -> b")
-        normalization = torch.linalg.vector_norm(text_features, dim=1) * torch.linalg.norm(image_features, dim=1)
-        text_logits /= normalization
-        image_logits /= normalization
-        text_logits = torch.log(text_logits)
-        image_logits = torch.log(image_logits)
-        text_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-            text_logits, labels
+    def compute_text_and_image_loss_terms(logits_per_text, logits_per_image, labels):
+        text_loss = torch.nn.functional.cross_entropy(
+            logits_per_text, labels
         )
-        image_loss = torch.nn.functional.binary_cross_entropy_with_logits(
-            image_logits, labels
+        image_loss = torch.nn.functional.cross_entropy(
+            logits_per_image, labels
         )
         return image_loss, text_loss

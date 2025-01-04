@@ -9,16 +9,18 @@ config = {
     "input_size": [224, 224],
     "train": {
         "max_seq_length": 70,
-        "max_epochs": 50,
-        "batch_size": 64,
-        'limit_train_batches': 1.000,
+        "max_epochs": 10,
+        "batch_size": 4,
+        'limit_train_batches': 0.10,
         'early_stopping_patience': 5,
         'log_every_n_steps': 4,
+        "gradient_clip_val": 10.0,
     },
     "optimizer": {
         'method': 'adam',
         'weight_decay': 5e-4,
         'lr': 1e-5,
+        "lr_scheduler_rate": 0.1,
     },
     "registry": {
         'project': "roco-debug",

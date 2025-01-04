@@ -68,6 +68,7 @@ train_dataloader = torch.utils.data.DataLoader(
     dataset=train_data,
     shuffle=True,
     num_workers=4,
+    drop_last=True,
     collate_fn=collate_clip,
 )
 
@@ -75,6 +76,7 @@ val_dataloader = torch.utils.data.DataLoader(
     batch_size=parameters['train']['batch_size'],
     dataset=val_data,
     num_workers=4,
+    drop_last=True,
     collate_fn=collate_clip,
 )
 
@@ -114,6 +116,7 @@ trainer = L.Trainer(
     logger=wandb_logger,
     callbacks=callbacks,
     log_every_n_steps=parameters['train']['log_every_n_steps'],
+    gradient_clip_val=parameters['train']['gradient_clip_val'],
 )
 
 trainer.fit(model, train_dataloader, val_dataloader)
