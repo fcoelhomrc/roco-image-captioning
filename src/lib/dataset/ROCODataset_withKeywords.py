@@ -1,4 +1,6 @@
 import json
+import os.path
+
 from torchvision.datasets import VisionDataset
 from torchvision.io import ImageReadMode, read_image
 from torchvision.transforms import transforms
@@ -7,7 +9,7 @@ import unicodedata
 from PIL import Image
 
 
-class ImageTextDataset(VisionDataset):
+class ImageTextDataset_withKeywords(VisionDataset):
     """
     Dtaset for loading image-text data for tasks like CLIP training, Image Captioning.
 
@@ -26,12 +28,12 @@ class ImageTextDataset(VisionDataset):
     """
 
     def __init__(
-        self,
-        name,
-        cfg,
-        root="",
-        max_seq_length=70,
-        transform: Optional[Callable] = None
+            self,
+            name,
+            cfg,
+            root="",
+            max_seq_length=70,
+            transform: Optional[Callable] = None
     ):
         super().__init__(root, transform)
         self.input_size = cfg["input_size"]
@@ -39,7 +41,6 @@ class ImageTextDataset(VisionDataset):
         self.mode = name
         self.transform = transform
         self.update_transform()
-
 
         if self.mode == "train":
             file_path = cfg["dataset"]["train_json"]
@@ -50,26 +51,62 @@ class ImageTextDataset(VisionDataset):
         else:
             raise ValueError(f"{name} dataset is not supported!")
 
+        file_path_kw = str(ImageTextDataset_withKeywords.remove_last_two_parts(file_path))
+        if self.mode == "train":
+            file_path_kw = os.path.join(file_path_kw,  "data", "train", "radiology")
+        elif self.mode == "eval" or name == "val":
+            file_path_kw = os.path.join(file_path_kw, "data", "validation", "radiology")
+        elif self.mode == "test":
+            file_path_kw = os.path.join(file_path_kw, "data", "test", "radiology")
+        else:
+            raise ValueError(f"{name} dataset is not supported!")
+
         with open(file_path, "r") as f:
             examples = [json.loads(line) for line in f.readlines()]
 
+            keyword_file = [os.path.basename(example["image_path"][:-4])
+                            for example in examples]
+
+        self.keywords = []
         self.captions = []
         self.image_paths = []
         self.max_seq_length = cfg["train"]["max_seq_length"]
 
-        for example in examples:
-            #self.captions.append(example["caption"])
-            #self.image_paths.append(example["image_path"])
-            #caption_words = example["caption"].strip().split(" ")
-            #trimmed_caption_words = caption_words[:self.max_seq_length]
-            #caption = " ".join(trimmed_caption_words)
+        for i, example in enumerate(examples):
+            # self.captions.append(example["caption"])
+            # self.image_paths.append(example["image_path"])
+            # caption_words = example["caption"].strip().split(" ")
+            # trimmed_caption_words = caption_words[:self.max_seq_length]
+            # caption = " ".join(trimmed_caption_words)
             self.captions.append(example["caption"][:self.max_seq_length])  # TODO: check if this is correct
-            #self.captions.append(caption)
+            # self.captions.append(caption)
             self.image_paths.append(example["image_path"])
+
+            with open(os.path.join(
+                    file_path_kw,
+                    "keywords.txt"),
+                    "r") as f:
+                tag = None
+                while tag != keyword_file[i]:
+                    text = f.readline()
+                    if text is None:
+                        break
+                    spt = text.split("\t")
+                    tag, kws = spt[0], spt[1:]
+
+                self.keywords.append(
+                    kws
+                )
+
             # self.image_paths.extend([example["image_path"]] * captions_per_image)
 
         self.captions = [unicodedata.normalize("NFKD", c) for c in self.captions]
 
+    @staticmethod
+    def remove_last_two_parts(path):
+        # Remove last two parts of the path
+        pth = os.path.join(*os.path.split(os.path.dirname(path))[:-1])
+        return pth
 
     def _load_image(self, idx: int):
         path = self.image_paths[idx]
@@ -84,6 +121,9 @@ class ImageTextDataset(VisionDataset):
 
     def _load_target(self, idx):
         return self.captions[idx]
+
+    def load_keywords(self, idx):
+        return self.keywords[idx], self.captions[idx]
 
     def __getitem__(self, index: int):
         image = self._load_image(index)
@@ -121,19 +161,20 @@ class ImageTextDataset(VisionDataset):
         self.transform = pipeline
 
 
-
 if __name__ == "__main__":
     from src.lib.data_transform.collate import collate_clip
 
     cfg_pth = "/home/felipe/Projects/roco-image-captioning/config.yaml"
     import yaml
     from tqdm import tqdm
+
     with open(cfg_pth, "r") as f:
         cfg = yaml.safe_load(f)
     ds = ImageTextDataset("train", cfg)
     from torch.utils.data import DataLoader
+
     dl = DataLoader(ds, batch_size=4, shuffle=True,
-                    collate_fn=collate_clip,)
+                    collate_fn=collate_clip, )
 
     for x, y in tqdm(dl):
         pass
