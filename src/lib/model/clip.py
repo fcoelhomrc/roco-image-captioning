@@ -107,6 +107,34 @@ class MedCLIP(L.LightningModule):
         self.log("val/mcc", mcc.to(torch.float32))  # wandb
         return loss
 
+    def test_step(self, test_batch, batch_idx):
+        # compute similarities (contrastive pairs)
+        outputs = self.model(**test_batch)
+        logits_per_text = outputs.logits_per_text
+        logits_per_image = outputs.logits_per_image
+        # compute loss
+        text_loss, image_loss = MedCLIP.compute_text_and_image_loss_terms(
+            logits_per_text, logits_per_image, self.labels
+        )
+        loss = self.loss_fn(text_loss, image_loss, weight=0.5)
+
+        # metrics
+        probas = logits_per_image.softmax(dim=1)
+        preds = probas.argmax(dim=1)
+        accuracy = torchmetrics.functional.accuracy(
+            preds, self.labels, task="multiclass", num_classes=len(self.labels)
+        )
+        mcc = torchmetrics.functional.matthews_corrcoef(
+            preds, self.labels, task="multiclass", num_classes=len(self.labels)
+        )
+        self.log("test/loss", loss)  # wandb
+        self.log("test/text_loss", text_loss)  # wandb
+        self.log("test/image_loss", image_loss)  # wandb
+        self.log("test/accuracy", accuracy)  # wandb
+        self.log("test/mcc", mcc.to(torch.float32))  # wandb
+        return loss
+
+
     @staticmethod
     def scaled_pairwise_cosine_sim_loss(text_loss, image_loss, weight=0.5):
         return weight * text_loss + (1 - weight) * image_loss
