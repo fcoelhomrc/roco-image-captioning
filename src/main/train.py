@@ -62,6 +62,13 @@ val_data = ImageTextDataset(
 )
 print(f"Successfully loaded validation data! Elapsed: {time.perf_counter() - start:.1f} seconds")
 
+print("Loading test data...")
+start = time.perf_counter()
+test_data = ImageTextDataset(
+    "test", cfg=parameters,
+)
+print(f"Successfully loaded test data! Elapsed: {time.perf_counter() - start:.1f} seconds")
+
 
 train_dataloader = torch.utils.data.DataLoader(
     batch_size=parameters['train']['batch_size'],
@@ -79,6 +86,15 @@ val_dataloader = torch.utils.data.DataLoader(
     drop_last=True,
     collate_fn=collate_clip,
 )
+
+test_dataloader = torch.utils.data.DataLoader(
+    batch_size=parameters['train']['batch_size'],
+    dataset=test_data,
+    num_workers=4,
+    drop_last=True,
+    collate_fn=collate_clip,
+)
+
 
 # Prepare callbacks
 callback_model_checkpoint = L.pytorch.callbacks.ModelCheckpoint(
@@ -120,4 +136,7 @@ trainer = L.Trainer(
 )
 
 trainer.fit(model, train_dataloader, val_dataloader)
+trainer.test(dataloaders=test_dataloader, ckpt_path="best")
+
+
 wandb.finish()
