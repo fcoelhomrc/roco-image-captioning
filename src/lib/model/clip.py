@@ -48,7 +48,9 @@ class MedCLIP(L.LightningModule):
         )
 
         lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-            optimizer, factor=self.user_parameters["optimizer"]["lr_scheduler_rate"], patience=10,
+            optimizer,
+            factor=self.user_parameters["optimizer"]["lr_scheduler_rate"],
+            patience=self.user_parameters["optimizer"]["lr_scheduler_patience"],
         )
 
         return {"optimizer": optimizer, "lr_scheduler": lr_scheduler, "monitor": "train/loss"}

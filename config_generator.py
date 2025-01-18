@@ -21,6 +21,7 @@ config = {
         'weight_decay': 5e-4,
         'lr': 1e-5,
         "lr_scheduler_rate": 0.1,
+        "lr_scheduler_patience": 1,
     },
     "registry": {
         'project': "roco-debug",
