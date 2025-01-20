@@ -5,7 +5,7 @@ from transformers import CLIPProcessor
 processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
 
 def process_text_and_images(images, targets):
-    inputs = processor(text=targets, images=images, return_tensors="pt", padding=True, do_rescale=False, truncate=True)
+    inputs = processor(text=targets, images=images, return_tensors="pt", padding=True, do_rescale=False, truncation=True)
     return inputs
 
 def collate_clip(batch):
