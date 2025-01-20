@@ -78,7 +78,8 @@ class ImageTextDataset_withKeywords(VisionDataset):
             # caption_words = example["caption"].strip().split(" ")
             # trimmed_caption_words = caption_words[:self.max_seq_length]
             # caption = " ".join(trimmed_caption_words)
-            self.captions.append(example["caption"][:self.max_seq_length])  # TODO: check if this is correct
+            # self.captions.append(example["caption"][:self.max_seq_length])  # TODO: check if this is correct <- IT IS NOT
+            self.captions.append(example["caption"])  # TODO: check if this is correct <- THIS IS!!!
             # self.captions.append(caption)
             self.image_paths.append(example["image_path"])
 
